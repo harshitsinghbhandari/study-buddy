@@ -92,6 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Check once, summarize/post any complete batches, then exit.",
     )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Also summarize/post the final partial batch instead of waiting for it to fill.",
+    )
     return parser
 
 
@@ -127,6 +132,11 @@ def split_discord_message(message: str) -> list[str]:
 
 
 def summary_state_key(summary: dict[str, Any]) -> str:
+    if summary.get("response_id_start") and summary.get("response_id_end"):
+        return (
+            f"{summary.get('input_path')}|{summary.get('response_id_start')}|"
+            f"{summary.get('response_id_end')}|{summary.get('batch_size')}"
+        )
     return (
         f"{summary.get('input_path')}|{summary.get('line_start')}|"
         f"{summary.get('line_end')}|{summary.get('timestamp_start')}|"
@@ -145,6 +155,7 @@ def summarize_and_post(
     prompt: str,
     timeout: float,
     think: str,
+    include_partial: bool,
 ) -> None:
     result = summarize_pending(
         input_path=input_path,
@@ -154,7 +165,7 @@ def summarize_and_post(
         prompt=prompt,
         timeout=timeout,
         think=think,
-        full_batches_only=True,
+        full_batches_only=not include_partial,
         rerun=False,
         verbose=False,
     )
@@ -230,6 +241,7 @@ def main() -> int:
                     prompt=args.prompt,
                     timeout=args.timeout,
                     think=args.think,
+                    include_partial=args.all,
                 )
             except Exception as exc:
                 print(f"summary watcher failed: {exc}")

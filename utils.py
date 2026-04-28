@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -110,8 +111,22 @@ def append_response(
     metadata: dict[str, Any] | None = None,
 ) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = utc_now()
+    response_id = hashlib.sha256(
+        json.dumps(
+            {
+                "timestamp": timestamp,
+                "source": source,
+                "image_hash": image_hash,
+                "response": response,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
     record = {
-        "timestamp": utc_now(),
+        "response_id": response_id,
+        "timestamp": timestamp,
         "source": source,
         "image_hash": image_hash,
         "status": status,

@@ -42,6 +42,12 @@ Run the summary and Discord watcher as a separate process:
 python summary_watcher.py
 ```
 
+Post the current partial summary batch too:
+
+```bash
+python summary_watcher.py --all
+```
+
 Disable thinking explicitly for summaries:
 
 ```bash
@@ -86,12 +92,13 @@ passes that same `img.png` to Ollama, and writes responses to
 `config.py` for the camera prompt.
 
 The summary pipeline currently reads only `responses.jsonl`. It sends each batch
-of 20 response strings to `qwen3.5:0.8b` and saves records in `summaries.json`
-with `timestamp_start` and `timestamp_end` for the source responses used. It
-passes `--think=false` to Ollama by default.
+of response strings to the configured summary model and saves records in
+`summaries.json` with source timestamp and response ID ranges. It passes the
+configured `--think` value to Ollama.
 
 The watcher pipeline is decoupled from screen capture. Run `screen_ocr.py` in
 one terminal and `summary_watcher.py` in another. The watcher polls
 `responses.jsonl`, summarizes new complete batches, posts unposted summaries to
 Discord using `DISCORD_WEBHOOK_URL` from `.env`, and tracks posting progress in
-`state.json`.
+`state.json`. By default it waits for complete batches; pass `--all` when you
+want it to summarize and post the final partial batch too.

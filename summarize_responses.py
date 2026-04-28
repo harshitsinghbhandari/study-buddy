@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -108,9 +109,24 @@ def read_response_entries(input_path: Path) -> list[dict[str, Any]]:
             timestamp = str(record.get("timestamp") or "").strip()
             if not response or not timestamp:
                 continue
+            response_id = str(record.get("response_id") or "").strip()
+            if not response_id:
+                response_id = hashlib.sha256(
+                    json.dumps(
+                        {
+                            "timestamp": timestamp,
+                            "source": record.get("source") or "",
+                            "image_hash": record.get("image_hash") or "",
+                            "response": response,
+                        },
+                        sort_keys=True,
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                ).hexdigest()
 
             entries.append(
                 {
+                    "response_id": response_id,
                     "line_number": line_number,
                     "timestamp": timestamp,
                     "response": response,
@@ -164,22 +180,51 @@ def build_summary_prompt(instruction: str, batch: list[dict[str, Any]]) -> str:
     )
 
 
-def batch_key(input_path: Path, batch: list[dict[str, Any]]) -> tuple[str, int, int]:
-    return (
-        str(input_path.resolve()),
-        int(batch[0]["line_number"]),
-        int(batch[-1]["line_number"]),
-    )
+def batch_keys(input_path: Path, batch: list[dict[str, Any]]) -> set[str]:
+    resolved_input_path = str(input_path.resolve())
+    return {
+        (
+            f"id:{resolved_input_path}|{batch[0]['response_id']}|"
+            f"{batch[-1]['response_id']}|{len(batch)}"
+        ),
+        (
+            f"legacy:{resolved_input_path}|{batch[0]['line_number']}|"
+            f"{batch[-1]['line_number']}|{batch[0]['timestamp']}|"
+            f"{batch[-1]['timestamp']}"
+        ),
+    }
 
 
-def existing_batch_keys(summaries: list[dict[str, Any]]) -> set[tuple[str, int, int]]:
-    keys: set[tuple[str, int, int]] = set()
+def existing_batch_keys(summaries: list[dict[str, Any]]) -> set[str]:
+    keys: set[str] = set()
     for summary in summaries:
         input_path = summary.get("input_path")
+        response_id_start = summary.get("response_id_start")
+        response_id_end = summary.get("response_id_end")
+        batch_size = summary.get("batch_size")
+        if (
+            isinstance(input_path, str)
+            and isinstance(response_id_start, str)
+            and isinstance(response_id_end, str)
+            and isinstance(batch_size, int)
+        ):
+            keys.add(f"id:{input_path}|{response_id_start}|{response_id_end}|{batch_size}")
+
         line_start = summary.get("line_start")
         line_end = summary.get("line_end")
-        if isinstance(input_path, str) and isinstance(line_start, int) and isinstance(line_end, int):
-            keys.add((input_path, line_start, line_end))
+        timestamp_start = summary.get("timestamp_start")
+        timestamp_end = summary.get("timestamp_end")
+        if (
+            isinstance(input_path, str)
+            and isinstance(line_start, int)
+            and isinstance(line_end, int)
+            and isinstance(timestamp_start, str)
+            and isinstance(timestamp_end, str)
+        ):
+            keys.add(
+                f"legacy:{input_path}|{line_start}|{line_end}|"
+                f"{timestamp_start}|{timestamp_end}"
+            )
     return keys
 
 
@@ -224,6 +269,8 @@ def summarize_batch(
         "think": think,
         "batch_number": batch_number,
         "batch_size": len(batch),
+        "response_id_start": batch[0]["response_id"],
+        "response_id_end": batch[-1]["response_id"],
         "line_start": batch[0]["line_number"],
         "line_end": batch[-1]["line_number"],
         "timestamp_start": batch[0]["timestamp"],
@@ -265,8 +312,7 @@ def summarize_pending(
             skipped += 1
             continue
 
-        key = batch_key(input_path, batch)
-        if key in seen:
+        if batch_keys(input_path, batch) & seen:
             skipped += 1
             continue
 
