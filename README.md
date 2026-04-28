@@ -30,6 +30,18 @@ Run the laptop camera pipeline:
 python camera_ocr.py --run no-stop
 ```
 
+Summarize screen OCR responses in batches of 20:
+
+```bash
+python summarize_responses.py
+```
+
+Disable thinking explicitly for summaries:
+
+```bash
+python summarize_responses.py --think=false
+```
+
 Change the interval:
 
 ```bash
@@ -66,3 +78,12 @@ The camera pipeline does not crop. It saves the full camera frame to `img.png`,
 passes that same `img.png` to Ollama, and writes responses to
 `camera_responses.jsonl` by default. Set `CAMERA_OLLAMA_QUESTION` in
 `config.py` for the camera prompt.
+
+The summary pipeline currently reads only `responses.jsonl`. It sends each batch
+of 20 response strings to `qwen3.5:0.8b` and saves records in `summaries.json`
+with `timestamp_start` and `timestamp_end` for the source responses used. It
+passes `--think=false` to Ollama by default.
+
+In `screen_ocr.py --run no-stop`, complete summary batches are also checked
+every 10 minutes by default and posted to Discord using `DISCORD_WEBHOOK_URL`
+from `.env`. Runtime posting progress is tracked in `state.json`.

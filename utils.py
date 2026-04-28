@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import signal
 import subprocess
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -60,14 +63,23 @@ def build_ollama_prompt(question: str) -> str:
     return f"{config.OLLAMA_IMAGE_ARGUMENT} \n{question}"
 
 
-def run_ollama(question: str, timeout: float) -> tuple[str, str, int | None]:
+def run_ollama_prompt(
+    *,
+    model: str,
+    prompt: str,
+    timeout: float,
+    think: str | None = None,
+) -> tuple[str, str, int | None]:
+    command = [
+        config.OLLAMA_COMMAND,
+        "run",
+    ]
+    if think is not None:
+        command.append(f"--think={think}")
+    command.extend([model, prompt])
+
     process = subprocess.run(
-        [
-            config.OLLAMA_COMMAND,
-            "run",
-            config.OLLAMA_MODEL,
-            build_ollama_prompt(question),
-        ],
+        command,
         capture_output=True,
         cwd=config.BASE_DIR,
         text=True,
@@ -75,6 +87,14 @@ def run_ollama(question: str, timeout: float) -> tuple[str, str, int | None]:
         check=False,
     )
     return process.stdout.strip(), process.stderr.strip(), process.returncode
+
+
+def run_ollama(question: str, timeout: float) -> tuple[str, str, int | None]:
+    return run_ollama_prompt(
+        model=config.OLLAMA_MODEL,
+        prompt=build_ollama_prompt(question),
+        timeout=timeout,
+    )
 
 
 def append_response(
@@ -141,3 +161,72 @@ def finish_temp_image(
 
 def should_continue(run_mode: RunMode, completed_checks: int) -> bool:
     return run_mode == "no-stop" or completed_checks < run_mode
+
+
+def load_env_file(env_path: Path) -> None:
+    if not env_path.exists():
+        return
+
+    with env_path.open("r", encoding="utf-8") as file:
+        for raw_line in file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+def get_env_value(name: str, env_path: Path | None = None) -> str:
+    if env_path is not None:
+        load_env_file(env_path)
+    return os.environ.get(name, "").strip()
+
+
+def post_discord_message(webhook_url: str, content: str, timeout: float = 15) -> None:
+    payload = json.dumps({"content": content}, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        webhook_url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "screen-ocr/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"discord webhook returned HTTP {response.status}")
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f"discord webhook returned HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"discord webhook failed: {exc.reason}") from exc
+
+
+def load_state(state_path: Path) -> dict[str, Any]:
+    if not state_path.exists():
+        return {}
+
+    try:
+        with state_path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except json.JSONDecodeError:
+        backup_path = state_path.with_suffix(state_path.suffix + ".invalid")
+        state_path.rename(backup_path)
+        return {}
+
+    if isinstance(data, dict):
+        return data
+    return {}
+
+
+def save_state(state_path: Path, state: dict[str, Any]) -> None:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = state_path.with_suffix(state_path.suffix + ".tmp")
+    with temp_path.open("w", encoding="utf-8") as file:
+        json.dump(state, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+    temp_path.replace(state_path)
