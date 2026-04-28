@@ -36,6 +36,12 @@ Summarize screen OCR responses in batches of 20:
 python summarize_responses.py
 ```
 
+Run the summary and Discord watcher as a separate process:
+
+```bash
+python summary_watcher.py
+```
+
 Disable thinking explicitly for summaries:
 
 ```bash
@@ -84,6 +90,8 @@ of 20 response strings to `qwen3.5:0.8b` and saves records in `summaries.json`
 with `timestamp_start` and `timestamp_end` for the source responses used. It
 passes `--think=false` to Ollama by default.
 
-In `screen_ocr.py --run no-stop`, complete summary batches are also checked
-every 10 minutes by default and posted to Discord using `DISCORD_WEBHOOK_URL`
-from `.env`. Runtime posting progress is tracked in `state.json`.
+The watcher pipeline is decoupled from screen capture. Run `screen_ocr.py` in
+one terminal and `summary_watcher.py` in another. The watcher polls
+`responses.jsonl`, summarizes new complete batches, posts unposted summaries to
+Discord using `DISCORD_WEBHOOK_URL` from `.env`, and tracks posting progress in
+`state.json`.
