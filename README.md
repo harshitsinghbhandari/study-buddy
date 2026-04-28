@@ -30,6 +30,31 @@ Run the laptop camera pipeline:
 python camera_ocr.py --run no-stop
 ```
 
+List audio input/output devices:
+
+```bash
+python audio_recorder.py --list-devices
+```
+
+Record audio chunks for later transcription:
+
+```bash
+python audio_recorder.py --run no-stop --device 0
+```
+
+Probe a YouTube URL for captions/audio:
+
+```bash
+python youtube_probe.py "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+Download captions or audio for a test:
+
+```bash
+python youtube_probe.py "https://www.youtube.com/watch?v=VIDEO_ID" --download-captions
+python youtube_probe.py "https://www.youtube.com/watch?v=VIDEO_ID" --download-audio
+```
+
 Summarize screen OCR responses in batches of 20:
 
 ```bash
@@ -84,6 +109,11 @@ The camera pipeline does not crop. It saves the full camera frame to `img.png`,
 passes that same `img.png` to Ollama, and writes responses to
 `camera_responses.jsonl` by default. Set `CAMERA_OLLAMA_QUESTION` in
 `config.py` for the camera prompt.
+
+The audio recorder writes fixed-length WAV chunks to `audio_segments/` and
+appends metadata to `audio_manifest.jsonl`. To capture laptop/system audio on
+macOS, select a loopback input device such as BlackHole or Loopback with
+`--device`.
 
 The summary pipeline currently reads only `responses.jsonl`. It sends each batch
 of 20 response strings to `qwen3.5:0.8b` and saves records in `summaries.json`

@@ -6,8 +6,11 @@ img.png
 crop_preview.png
 responses.jsonl
 camera_responses.jsonl
+audio_manifest.jsonl
 summaries.json
 state.json
 archive/
 camera_archive/
+audio_segments/
+youtube_downloads/
 .env

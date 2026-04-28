@@ -1,2 +1,5 @@
 Pillow>=10.0
 opencv-python>=4.9
+sounddevice>=0.4.6
+soundfile>=0.12.1
+yt-dlp>=2025.1.15
