@@ -5,36 +5,27 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import json
-import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
 
 from PIL import ImageGrab
 
 import config
+from utils import (
+    StopRequested,
+    append_response,
+    as_text,
+    finish_temp_image,
+    install_signal_handlers,
+    parse_run,
+    remove_temp_image,
+    run_ollama,
+    should_continue,
+)
 
-RunMode = int | Literal["no-stop"]
-
-
-class StopRequested(Exception):
-    """Raised when the process receives a stop signal."""
-
-
-def parse_run(value: str) -> RunMode:
-    if value == "no-stop":
-        return value
-    try:
-        count = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("--run must be an integer or 'no-stop'") from exc
-    if count < 1:
-        raise argparse.ArgumentTypeError("--run must be at least 1")
-    return count
+CropBox = tuple[int, int, int, int]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -71,6 +62,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Keep img.png after Ollama returns. Default behavior deletes it.",
     )
     parser.add_argument(
+        "--archive-images",
+        action="store_true",
+        help="Move each processed img.png to archive/img_TIMESTAMP.png after Ollama returns.",
+    )
+    parser.add_argument(
+        "--archive-dir",
+        default=config.ARCHIVE_DIR,
+        type=Path,
+        help=f"Directory for archived processed images. Default: {config.ARCHIVE_DIR}.",
+    )
+    parser.add_argument(
         "--timeout",
         default=config.SUBPROCESS_TIMEOUT_SECONDS,
         type=float,
@@ -79,82 +81,14 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def install_signal_handlers() -> None:
-    def handle_stop(signum: int, _frame: object) -> None:
-        raise StopRequested(f"received signal {signum}")
-
-    signal.signal(signal.SIGINT, handle_stop)
-    signal.signal(signal.SIGTERM, handle_stop)
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def capture_crop(image_path: Path) -> str:
+def capture_crop(image_path: Path) -> tuple[str, CropBox]:
     image_path.parent.mkdir(parents=True, exist_ok=True)
     screenshot = ImageGrab.grab()
-    crop = screenshot.crop(config.CROP_BOX)
+    crop_box = config.CROP_BOX
+    crop = screenshot.crop(crop_box)
     digest = hashlib.sha256(crop.tobytes()).hexdigest()
     crop.save(image_path)
-    return digest
-
-
-def as_text(value: str | bytes | None) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    return value
-
-
-def run_ollama(timeout: float) -> tuple[str, str, int | None]:
-    prompt = f"{config.OLLAMA_IMAGE_ARGUMENT} \n{config.OLLAMA_QUESTION}"
-    process = subprocess.run(
-        [config.OLLAMA_COMMAND, "run", config.OLLAMA_MODEL, prompt],
-        capture_output=True,
-        cwd=config.BASE_DIR,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
-    return process.stdout.strip(), process.stderr.strip(), process.returncode
-
-
-def append_response(
-    output_path: Path,
-    *,
-    image_hash: str,
-    status: str,
-    response: str = "",
-    error: str = "",
-    returncode: int | None = None,
-) -> None:
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    record = {
-        "timestamp": utc_now(),
-        "image_hash": image_hash,
-        "crop_box": config.CROP_BOX,
-        "status": status,
-        "returncode": returncode,
-        "response": response,
-        "error": error,
-    }
-    with output_path.open("a", encoding="utf-8") as file:
-        file.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def remove_temp_image(image_path: Path, keep_image: bool) -> None:
-    if keep_image:
-        return
-    try:
-        image_path.unlink()
-    except FileNotFoundError:
-        pass
-
-
-def should_continue(run_mode: RunMode, completed_checks: int) -> bool:
-    return run_mode == "no-stop" or completed_checks < run_mode
+    return digest, crop_box
 
 
 def main() -> int:
@@ -165,6 +99,8 @@ def main() -> int:
         parser.error("--interval must be 0 or greater")
     if args.timeout <= 0:
         parser.error("--timeout must be greater than 0")
+    if args.keep_image and args.archive_images:
+        parser.error("--keep-image and --archive-images cannot be used together")
 
     install_signal_handlers()
 
@@ -179,7 +115,7 @@ def main() -> int:
     try:
         while should_continue(args.run, completed_checks):
             completed_checks += 1
-            image_hash = capture_crop(args.image)
+            image_hash, crop_box = capture_crop(args.image)
 
             if image_hash == last_hash:
                 remove_temp_image(args.image, args.keep_image)
@@ -187,29 +123,45 @@ def main() -> int:
             else:
                 last_hash = image_hash
                 print(f"[{completed_checks}] changed; running ollama")
+                response = ""
+                error = ""
+                returncode = None
+                status = "ok"
                 try:
-                    response, stderr, returncode = run_ollama(args.timeout)
+                    response, stderr, returncode = run_ollama(
+                        config.OLLAMA_QUESTION,
+                        args.timeout,
+                    )
                     status = "ok" if returncode == 0 else "ollama_error"
+                    error = "" if returncode == 0 else stderr
+                except subprocess.TimeoutExpired as exc:
+                    status = "timeout"
+                    response = as_text(exc.stdout)
+                    error = as_text(exc.stderr) or f"timed out after {args.timeout} seconds"
+                    print(f"[{completed_checks}] ollama timed out")
+                except OSError as exc:
+                    status = "ollama_error"
+                    error = str(exc)
+                    print(f"[{completed_checks}] ollama failed: {exc}")
+                finally:
+                    archived_path = finish_temp_image(
+                        args.image,
+                        keep_image=args.keep_image,
+                        archive_images=args.archive_images,
+                        archive_dir=args.archive_dir,
+                    )
                     append_response(
                         args.output,
                         image_hash=image_hash,
+                        source="screen",
                         status=status,
                         response=response,
-                        error=stderr,
+                        error=error,
                         returncode=returncode,
+                        archived_image=str(archived_path or ""),
+                        metadata={"crop_box": crop_box},
                     )
                     print(f"[{completed_checks}] response stored: status={status}")
-                except subprocess.TimeoutExpired as exc:
-                    append_response(
-                        args.output,
-                        image_hash=image_hash,
-                        status="timeout",
-                        response=as_text(exc.stdout),
-                        error=as_text(exc.stderr) or f"timed out after {args.timeout} seconds",
-                    )
-                    print(f"[{completed_checks}] ollama timed out")
-                finally:
-                    remove_temp_image(args.image, args.keep_image)
 
             if should_continue(args.run, completed_checks):
                 time.sleep(args.interval)

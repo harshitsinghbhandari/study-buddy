@@ -2,4 +2,8 @@
 __pycache__/
 *.pyc
 img.png
+crop_preview.png
 responses.jsonl
+camera_responses.jsonl
+archive/
+camera_archive/

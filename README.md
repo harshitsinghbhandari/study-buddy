@@ -1,6 +1,6 @@
 # Screen OCR Watcher
 
-Small CLI that watches a fixed screen crop and sends changed frames to Ollama.
+Small CLI that watches a configured screen crop and sends changed frames to Ollama.
 
 ## Setup
 
@@ -24,13 +24,45 @@ Run five screenshot checks:
 python screen_ocr.py --run 5
 ```
 
+Run the laptop camera pipeline:
+
+```bash
+python camera_ocr.py --run no-stop
+```
+
 Change the interval:
 
 ```bash
 python screen_ocr.py --run no-stop --interval 10
 ```
 
-Responses are appended to `responses.jsonl`. The temporary crop is written as
-`img.png` before calling Ollama and deleted after the response arrives.
+Archive every changed image after Ollama finishes:
 
-Defaults live in `config.py`.
+```bash
+python screen_ocr.py --run no-stop --archive-images
+```
+
+Test the crop box:
+
+```bash
+python test_crop.py
+```
+
+Override the crop box for a preview:
+
+```bash
+python test_crop.py --crop-box 350,250,1350,850
+```
+
+Responses are appended to `responses.jsonl`. The temporary crop is written as
+`img.png` before calling Ollama and deleted after the response arrives. With
+`--archive-images`, the processed `img.png` is moved to
+`archive/img_TIMESTAMP.png` instead.
+
+Defaults live in `config.py`. The crop box uses absolute screenshot coordinates:
+`CROP_BOX = (left, top, right, bottom)`.
+
+The camera pipeline does not crop. It saves the full camera frame to `img.png`,
+passes that same `img.png` to Ollama, and writes responses to
+`camera_responses.jsonl` by default. Set `CAMERA_OLLAMA_QUESTION` in
+`config.py` for the camera prompt.
