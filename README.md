@@ -1,6 +1,6 @@
 # Screen OCR Watcher
 
-Small CLI that watches a configured screen crop and sends changed frames to Ollama.
+Capture screen crops, camera frames, or image folders; OCR them through a local Ollama model; summarize batches and post to Discord.
 
 ## Setup
 
@@ -10,158 +10,92 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+Requires [Ollama](https://ollama.com) running locally with `deepseek-ocr` pulled. For summaries, pull `gemma4:31b-cloud` (or set `--model`).
+
 ## Usage
 
-Run indefinitely:
+### Screen OCR
 
 ```bash
-python screen_ocr.py --run no-stop
+python -m cli.screen --run no-stop
+python -m cli.screen --run 5
+python -m cli.screen --run no-stop --interval 10
+python -m cli.screen --run no-stop --archive-images
 ```
 
-Run five screenshot checks:
+### Camera OCR
 
 ```bash
-python screen_ocr.py --run 5
+python -m cli.camera --run no-stop
 ```
 
-Run the laptop camera pipeline:
+### Summarize responses
 
 ```bash
-python camera_ocr.py --run no-stop
+python -m cli.summarize
+python -m cli.summarize --think=false
 ```
 
-Summarize screen OCR responses in batches of 20:
+### Summary watcher (summarize + post to Discord)
 
 ```bash
-python summarize_responses.py
+python -m cli.watch
+python -m cli.watch --all
+python -m cli.watch --once
 ```
 
-Run the summary and Discord watcher as a separate process:
+Set `DISCORD_WEBHOOK_URL` in `.env` for Discord posting.
+
+### Crop preview
 
 ```bash
-python summary_watcher.py
+python -m cli.test_crop
+python -m cli.test_crop --crop-box 350,250,1350,850
 ```
 
-Post the current partial summary batch too:
+### Image-folder OCR
 
 ```bash
-python summary_watcher.py --all
+python -m pipelines.image_ocr content/images/RAG-1
 ```
 
-Disable thinking explicitly for summaries:
+Outputs to `data/ocr-output/<folder>/responses.jsonl`.
+
+### Image-folder OCR summary watcher
 
 ```bash
-python summarize_responses.py --think=false
+python -m pipelines.image_ocr_summary content/images/RAG-1
 ```
 
-Change the interval:
+### Extras
 
 ```bash
-python screen_ocr.py --run no-stop --interval 10
+python -m extras.pdf_images notes.pdf --output-dir pdf_images
+python -m extras.video_frames lecture.mp4 --output-dir frames
+python -m extras.whisper lecture.mp4
 ```
-
-Archive every changed image after Ollama finishes:
-
-```bash
-python screen_ocr.py --run no-stop --archive-images
-```
-
-Test the crop box:
-
-```bash
-python test_crop.py
-```
-
-Override the crop box for a preview:
-
-```bash
-python test_crop.py --crop-box 350,250,1350,850
-```
-
-Convert a PDF into page images:
-
-```bash
-python -m extra_features.pdf_images notes.pdf --output-dir pdf_images
-```
-
-Extract visually distinct frames from a video:
-
-```bash
-python -m extra_features.video_distinct_frames lecture.mp4 --output-dir frames
-```
-
-Frames with at least 80% downscaled pixel similarity to an already kept frame
-are skipped by default.
-
-Transcribe a video with the local OpenAI Whisper CLI:
-
-```bash
-python -m extra_features.openai_video_transcription lecture.mp4
-```
-
-This requires `ffmpeg` and the `whisper` CLI. Install Whisper with:
-
-```bash
-brew install openai-whisper
-```
-
-Run Ollama OCR over an image folder:
-
-```bash
-python -m pipelines.image_ollama_ocr content/images/RAG-1
-```
-
-Outputs are written to `data/ocr-output/<image-folder>/responses.jsonl`. The
-pipeline rests for a random 5-7 seconds between OCR calls by default.
-
-Summarize and post image-folder OCR output:
-
-```bash
-python -m pipelines.image_ocr_summary_watcher content/images/RAG-1
-```
-
-This watcher consumes available OCR rows in batches of 10, including the final
-partial batch, posts summaries to Discord, and stores per-folder summaries next
-to the OCR output as `data/ocr-output/<image-folder>/summaries.json`.
-
-Responses are appended to `responses.jsonl`. The temporary crop is written as
-`img.png` before calling Ollama and deleted after the response arrives. With
-`--archive-images`, the processed `img.png` is moved to
-`archive/img_TIMESTAMP.png` instead.
-
-Defaults live in `config.py`. The crop box uses absolute screenshot coordinates:
-`CROP_BOX = (left, top, right, bottom)`.
-
-The camera pipeline does not crop. It saves the full camera frame to `img.png`,
-passes that same `img.png` to Ollama, and writes responses to
-`camera_responses.jsonl` by default. Set `CAMERA_OLLAMA_QUESTION` in
-`config.py` for the camera prompt.
-
-The summary pipeline currently reads only `responses.jsonl`. It sends each batch
-of response strings to the configured summary model and saves records in
-`summaries.json` with source timestamp and response ID ranges. It passes the
-configured `--think` value to Ollama.
-
-The watcher pipeline is decoupled from screen capture. Run `screen_ocr.py` in
-one terminal and `summary_watcher.py` in another. The watcher polls
-`responses.jsonl`, summarizes new complete batches, posts unposted summaries to
-Discord using `DISCORD_WEBHOOK_URL` from `.env`, and tracks posting progress in
-`state.json`. By default it waits for complete batches; pass `--all` when you
-want it to summarize and post the final partial batch too.
 
 ## Module Layout
 
-The code is split by pipeline responsibility:
+| Package | Role |
+|---|---|
+| `cli/` | Entry-point scripts. `python -m cli.<name>` to run. |
+| `core/` | Shared infrastructure: config, runtime helpers, event log, state store, file artifacts, env loader. |
+| `capture/` | Input sources: screen grab, camera frame. |
+| `ollama/` | Ollama subprocess client. |
+| `sinks/` | Output destinations (Discord webhook). |
+| `summary/` | Batching and watcher logic for summarization. |
+| `pipelines/` | Higher-level orchestrators (image-folder OCR, image-folder summary watcher). |
+| `extras/` | Standalone tools (PDF to images, video frame extraction, Whisper transcription). |
 
-- `runtime.py` - run modes, signal handling, timestamps, text coercion.
-- `ollama_client.py` - all Ollama subprocess calls.
-- `event_log.py` - append-only JSONL response records and response IDs.
-- `file_artifacts.py` - temp image cleanup and archive moves.
-- `state_store.py` - JSON state load/save.
-- `env_loader.py` - `.env` loading.
-- `discord_sink.py` - Discord webhook posting.
-- `extra_features/` - standalone capabilities such as PDF page rendering.
-- `pipelines/` - orchestration modules for larger workflows.
-- `summarize_responses.py` - batch summary processor.
-- `summary_watcher.py` - response-log watcher and Discord dispatcher.
-- `utils.py` - compatibility re-exports for older imports.
+Configuration lives in `core/config.py`. The crop box uses absolute screenshot coordinates: `CROP_BOX = (left, top, right, bottom)`.
+
+## Dependencies
+
+- Python: `Pillow` (screen grab), `opencv-python` (camera + video frames), `PyMuPDF` (PDF render).
+- Services: Ollama CLI on `PATH`.
+- Optional: `ffmpeg` + `whisper` CLIs for `extras/whisper.py`.
+
+## License
+
+MIT
