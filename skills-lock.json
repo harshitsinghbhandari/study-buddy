@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "openai-whisper": {
+      "source": "steipete/clawdis",
+      "sourceType": "github",
+      "skillPath": "skills/openai-whisper/SKILL.md",
+      "computedHash": "2f04fe7900baaecfdc63a978cb18239a1ba987497d7c6b85e578622ed6ea82b9"
+    }
+  }
+}

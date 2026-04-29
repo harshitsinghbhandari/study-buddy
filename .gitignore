@@ -12,4 +12,9 @@ data/ocr-output/
 content/
 archive/
 camera_archive/
+video_frames/
+*.transcript.json
+*.transcript.txt
+*.transcript.srt
+*.transcript.vtt
 .env

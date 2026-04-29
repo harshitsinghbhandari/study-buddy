@@ -84,6 +84,27 @@ Convert a PDF into page images:
 python -m extra_features.pdf_images notes.pdf --output-dir pdf_images
 ```
 
+Extract visually distinct frames from a video:
+
+```bash
+python -m extra_features.video_distinct_frames lecture.mp4 --output-dir frames
+```
+
+Frames with at least 80% downscaled pixel similarity to an already kept frame
+are skipped by default.
+
+Transcribe a video with the local OpenAI Whisper CLI:
+
+```bash
+python -m extra_features.openai_video_transcription lecture.mp4
+```
+
+This requires `ffmpeg` and the `whisper` CLI. Install Whisper with:
+
+```bash
+brew install openai-whisper
+```
+
 Run Ollama OCR over an image folder:
 
 ```bash
