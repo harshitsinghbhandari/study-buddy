@@ -10,9 +10,18 @@ import cv2
 from runtime.protocol import Source
 from runtime.registry import register
 
+_PARAMS_SCHEMA = {
+    "camera_index": {"type": "integer", "default": 1},
+    "warmup_frames": {"type": "integer", "default": 3},
+    "interval": {"type": "number", "default": 10},
+    "image_path": {"type": "string", "default": "img.png"},
+}
+
 
 @register("source.camera")
 class CameraSource(Source):
+    _params_schema = _PARAMS_SCHEMA
+
     def configure(self, params: dict[str, Any]) -> None:
         super().configure(params)
         self.camera_index = int(params.get("camera_index") or 1)

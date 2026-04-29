@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from pathlib import Path
 from typing import Any
 
 from runtime.protocol import Processor
 from runtime.registry import register
 
+_PARAMS_SCHEMA = {
+    "model": {"type": "string", "default": "gemma4:31b-cloud"},
+    "batch_size": {"type": "integer", "default": 10},
+    "prompt": {"type": "string", "default": "Extract the key concepts from these responses."},
+    "timeout": {"type": "number", "default": 600},
+    "think": {"type": "string", "default": "false"},
+    "ollama_command": {"type": "string", "default": "ollama"},
+}
+
 
 @register("processor.ollama_summarize")
 class OllamaSummarizeProcessor(Processor):
+    _params_schema = _PARAMS_SCHEMA
+
     def configure(self, params: dict[str, Any]) -> None:
         super().configure(params)
         self.model = params.get("model") or "gemma4:31b-cloud"

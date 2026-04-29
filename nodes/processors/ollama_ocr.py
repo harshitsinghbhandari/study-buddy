@@ -6,9 +6,18 @@ from typing import Any
 from runtime.protocol import Processor
 from runtime.registry import register
 
+_PARAMS_SCHEMA = {
+    "model": {"type": "string", "default": "deepseek-ocr"},
+    "question": {"type": "string", "default": "What study topics is this image about?"},
+    "timeout": {"type": "number", "default": 30},
+    "ollama_command": {"type": "string", "default": "ollama"},
+}
+
 
 @register("processor.ollama_ocr")
 class OllamaOCRProcessor(Processor):
+    _params_schema = _PARAMS_SCHEMA
+
     def configure(self, params: dict[str, Any]) -> None:
         super().configure(params)
         self.model = params.get("model") or "deepseek-ocr"

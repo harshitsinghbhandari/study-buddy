@@ -5,9 +5,16 @@ from typing import Any
 from runtime.protocol import Processor
 from runtime.registry import register
 
+_PARAMS_SCHEMA = {
+    "key": {"type": "string", "default": "image_hash", "description": "Item key to deduplicate on"},
+    "pass_unchanged": {"type": "boolean", "default": False, "description": "Emit items with _dedup_skipped flag instead of dropping"},
+}
+
 
 @register("processor.hash_dedup")
 class HashDedupProcessor(Processor):
+    _params_schema = _PARAMS_SCHEMA
+
     def configure(self, params: dict[str, Any]) -> None:
         super().configure(params)
         self.key = params.get("key") or "image_hash"

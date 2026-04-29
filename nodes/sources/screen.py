@@ -10,9 +10,18 @@ from PIL import ImageGrab
 from runtime.protocol import Source
 from runtime.registry import register
 
+_PARAMS_SCHEMA = {
+    "crop_box": {"type": "array", "items": {"type": "integer"}, "default": [100, 400, 2800, 1900], "description": "Crop box [left, top, right, bottom]"},
+    "interval": {"type": "number", "default": 10, "description": "Seconds between captures"},
+    "image_path": {"type": "string", "default": "img.png"},
+    "run": {"type": "integer", "default": 0, "description": "Number of captures (0 = infinite)"},
+}
+
 
 @register("source.screen")
 class ScreenSource(Source):
+    _params_schema = _PARAMS_SCHEMA
+
     def configure(self, params: dict[str, Any]) -> None:
         super().configure(params)
         self.crop_box = tuple(params.get("crop_box") or (100, 400, 2800, 1900))

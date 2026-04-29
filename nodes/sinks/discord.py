@@ -8,9 +8,16 @@ from typing import Any
 from runtime.protocol import Sink
 from runtime.registry import register
 
+_PARAMS_SCHEMA = {
+    "webhook_url": {"type": "string", "default": "", "description": "Discord webhook URL"},
+    "max_chars": {"type": "integer", "default": 1900},
+}
+
 
 @register("sink.discord")
 class DiscordSink(Sink):
+    _params_schema = _PARAMS_SCHEMA
+
     def configure(self, params: dict[str, Any]) -> None:
         super().configure(params)
         self.webhook_url = params.get("webhook_url") or ""

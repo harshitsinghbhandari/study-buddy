@@ -11,6 +11,7 @@ class Item(dict):
 class Node(abc.ABC):
     node_kind: str = "node"
     name: str = ""
+    _params_schema: dict[str, Any] = {}
 
     def configure(self, params: dict[str, Any]) -> None:
         self.name = params.get("_id", self.__class__.__name__)
@@ -19,8 +20,9 @@ class Node(abc.ABC):
     async def run(self, inbox: Any, outbox: Any, ctx: Any) -> None:
         ...
 
-    def schema(self) -> dict[str, Any]:
-        return {}
+    @classmethod
+    def schema(cls) -> dict[str, Any]:
+        return {"type": cls.node_kind, "params": cls._params_schema}
 
 
 class Source(Node):

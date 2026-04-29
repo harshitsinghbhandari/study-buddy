@@ -9,9 +9,15 @@ from typing import Any
 from runtime.protocol import Sink
 from runtime.registry import register
 
+_PARAMS_SCHEMA = {
+    "path": {"type": "string", "default": "responses.jsonl", "description": "Output JSONL file path"},
+}
+
 
 @register("sink.jsonl")
 class JsonlSink(Sink):
+    _params_schema = _PARAMS_SCHEMA
+
     def configure(self, params: dict[str, Any]) -> None:
         super().configure(params)
         self.path = Path(params.get("path") or "responses.jsonl")

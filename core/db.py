@@ -60,7 +60,7 @@ class Database:
     @property
     def conn(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(str(self.path))
+            self._conn = sqlite3.connect(str(self.path), check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
@@ -80,8 +80,6 @@ class Database:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
-
-    # --- pipelines ---
 
     def create_pipeline(self, name: str, definition_yaml: str) -> int:
         cur = self.conn.execute(
@@ -106,8 +104,6 @@ class Database:
     def delete_pipeline(self, pipeline_id: int) -> None:
         self.conn.execute("DELETE FROM pipelines WHERE id = ?", (pipeline_id,))
         self.conn.commit()
-
-    # --- runs ---
 
     def create_run(self, pipeline_id: int) -> int:
         cur = self.conn.execute(
@@ -135,8 +131,6 @@ class Database:
         )
         self.conn.commit()
 
-    # --- events ---
-
     def append_event(self, run_id: int, node_id: str, kind: str, payload: dict[str, Any] | None = None) -> int:
         cur = self.conn.execute(
             "INSERT INTO events (run_id, node_id, kind, payload) VALUES (?, ?, ?, ?)",
@@ -157,8 +151,6 @@ class Database:
             results.append(d)
         return results
 
-    # --- state ---
-
     def get_state(self, key: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT value FROM state WHERE key = ?", (key,)).fetchone()
         return json.loads(row["value"]) if row else {}
@@ -169,8 +161,6 @@ class Database:
             (key, json.dumps(value, ensure_ascii=False)),
         )
         self.conn.commit()
-
-    # --- checkpoints ---
 
     def get_checkpoint(self, run_id: int, node_id: str) -> dict[str, Any]:
         row = self.conn.execute(

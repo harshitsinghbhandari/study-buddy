@@ -8,10 +8,15 @@ from runtime.protocol import Source
 from runtime.registry import register
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+_PARAMS_SCHEMA = {
+    "folder": {"type": "string", "required": True, "description": "Path to image folder"},
+}
 
 
 @register("source.folder")
 class FolderSource(Source):
+    _params_schema = _PARAMS_SCHEMA
+
     def configure(self, params: dict[str, Any]) -> None:
         super().configure(params)
         self.folder = Path(params["folder"])
