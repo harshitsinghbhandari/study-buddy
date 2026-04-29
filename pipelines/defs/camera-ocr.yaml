@@ -1,0 +1,26 @@
+name: camera-ocr
+nodes:
+  - id: camera
+    type: source.camera
+    params:
+      camera_index: 1
+      warmup_frames: 3
+      interval: 10
+  - id: dedup
+    type: processor.hash_dedup
+    params:
+      key: image_hash
+  - id: ollama
+    type: processor.ollama_ocr
+    params:
+      model: deepseek-ocr
+      question: "What are the face expressions of this guy?"
+      timeout: 30
+  - id: jsonl
+    type: sink.jsonl
+    params:
+      path: camera_responses.jsonl
+edges:
+  - [camera, dedup]
+  - [dedup, ollama]
+  - [ollama, jsonl]

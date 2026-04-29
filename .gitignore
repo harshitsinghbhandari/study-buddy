@@ -2,6 +2,7 @@
 .env
 __pycache__/
 *.pyc
+*.db
 img.png
 crop_preview.png
 responses.jsonl
@@ -17,5 +18,6 @@ video_frames/
 *.transcript.txt
 *.transcript.srt
 *.transcript.vtt
-.env
 agent-orchestrator.yaml
+.pytest_cache/
+*.egg-info/

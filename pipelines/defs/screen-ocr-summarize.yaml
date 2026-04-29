@@ -1,0 +1,37 @@
+name: screen-ocr-summarize
+nodes:
+  - id: screen
+    type: source.screen
+    params:
+      crop_box: [100, 400, 2800, 1900]
+      interval: 10
+  - id: dedup
+    type: processor.hash_dedup
+    params:
+      key: image_hash
+  - id: ollama
+    type: processor.ollama_ocr
+    params:
+      model: deepseek-ocr
+      question: "What study topics is this image about?"
+      timeout: 30
+  - id: jsonl
+    type: sink.jsonl
+    params:
+      path: responses.jsonl
+  - id: summarize
+    type: processor.ollama_summarize
+    params:
+      model: gemma4:31b-cloud
+      batch_size: 10
+      think: "false"
+      timeout: 600
+  - id: discord
+    type: sink.discord
+    params:
+      max_chars: 1900
+edges:
+  - [screen, dedup]
+  - [dedup, ollama]
+  - [ollama, summarize]
+  - [summarize, discord]

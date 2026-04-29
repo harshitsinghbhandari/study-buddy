@@ -1,0 +1,25 @@
+name: screen-ocr
+nodes:
+  - id: screen
+    type: source.screen
+    params:
+      crop_box: [100, 400, 2800, 1900]
+      interval: 10
+  - id: dedup
+    type: processor.hash_dedup
+    params:
+      key: image_hash
+  - id: ollama
+    type: processor.ollama_ocr
+    params:
+      model: deepseek-ocr
+      question: "What study topics is this image about?"
+      timeout: 30
+  - id: jsonl
+    type: sink.jsonl
+    params:
+      path: responses.jsonl
+edges:
+  - [screen, dedup]
+  - [dedup, ollama]
+  - [ollama, jsonl]
