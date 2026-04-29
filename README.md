@@ -89,6 +89,7 @@ screen-ocr/
 ├── pipelines/defs/   YAML pipeline definitions
 ├── cli/              CLI entry point
 ├── tests/            Pytest suite (17 tests)
+├── web/              React dashboard (Vite + React Flow + Tailwind)
 └── docs/             Architecture, vision, ideas, refactor notes
 ```
 
@@ -132,6 +133,18 @@ edges:
 | GET | `/runs` | List all runs |
 | GET | `/runs/{id}` | Run status |
 | GET | `/runs/{id}/logs` | SSE event stream |
+
+## Dashboard (React)
+
+```bash
+cd web && npm install && npm run dev
+```
+
+Opens at `http://localhost:5173`. Proxies `/api/*` to the Python backend on port 8000.
+
+- **Sidebar**: list/create/delete pipelines, start/stop runs
+- **Canvas**: React Flow visualization of pipeline nodes and edges
+- **Run panel**: live SSE log stream for active runs
 
 ## Extras
 
