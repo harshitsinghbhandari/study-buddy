@@ -4,27 +4,23 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from PIL import ImageGrab
-
-import config
-from event_log import append_response
-from file_artifacts import finish_temp_image, remove_temp_image
-from ollama_client import run_ollama
-from runtime import (
+from capture.screen import CropBox, capture_crop
+from core import config
+from core.event_log import append_response
+from core.file_artifacts import finish_temp_image, remove_temp_image
+from core.runtime import (
     StopRequested,
     as_text,
     install_signal_handlers,
     parse_run,
     should_continue,
 )
-
-CropBox = tuple[int, int, int, int]
+from ollama.client import run_ollama
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -78,16 +74,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait for Ollama before recording a timeout.",
     )
     return parser
-
-
-def capture_crop(image_path: Path) -> tuple[str, CropBox]:
-    image_path.parent.mkdir(parents=True, exist_ok=True)
-    screenshot = ImageGrab.grab()
-    crop_box = config.CROP_BOX
-    crop = screenshot.crop(crop_box)
-    digest = hashlib.sha256(crop.tobytes()).hexdigest()
-    crop.save(image_path)
-    return digest, crop_box
 
 
 def main() -> int:

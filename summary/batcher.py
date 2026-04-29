@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import config
-from ollama_client import run_ollama_prompt
-from runtime import as_text, utc_now
+from core import config
+from core.runtime import as_text, utc_now
+from ollama.client import run_ollama_prompt
 
 
 class SummaryRunResult:

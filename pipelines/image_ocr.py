@@ -12,10 +12,10 @@ import time
 from pathlib import Path
 from typing import Any
 
-import config
-from event_log import append_response
-from ollama_client import run_ollama_prompt
-from runtime import as_text
+from core import config
+from core.event_log import append_response
+from core.runtime import as_text
+from ollama.client import run_ollama_prompt
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 

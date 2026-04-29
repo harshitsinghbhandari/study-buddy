@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PIL import ImageGrab
 
-import config
+from core import config
 
 
 def parse_crop_box(value: str) -> tuple[int, int, int, int]:

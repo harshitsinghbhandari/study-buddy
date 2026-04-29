@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from runtime import filename_timestamp
+from core.runtime import filename_timestamp
 
 
 def remove_temp_image(image_path: Path, keep_image: bool) -> None:

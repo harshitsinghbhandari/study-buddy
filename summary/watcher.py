@@ -8,12 +8,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-import config
-from discord_sink import post_discord_message
-from env_loader import get_env_value
-from runtime import StopRequested, install_signal_handlers, utc_now
-from state_store import load_state, save_state
-from summarize_responses import load_summaries, summarize_pending
+from core import config
+from core.env_loader import get_env_value
+from core.runtime import StopRequested, install_signal_handlers, utc_now
+from core.state_store import load_state, save_state
+from sinks.discord import post_discord_message
+from summary.batcher import load_summaries, summarize_pending
 
 
 def build_parser() -> argparse.ArgumentParser:

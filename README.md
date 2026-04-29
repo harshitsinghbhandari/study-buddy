@@ -1,6 +1,10 @@
 # Screen OCR Watcher
 
-Small CLI that watches a configured screen crop and sends changed frames to Ollama.
+Pipelines that capture from a screen, camera, image folder, PDF, or video,
+send frames to an Ollama OCR model, and post batched summaries to Discord.
+
+See `docs/VISION.md` for the planned pipeline-builder + dashboard direction
+and `docs/ARCHITECTURE.md` for the current layout.
 
 ## Setup
 
@@ -10,158 +14,69 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Usage
+Ollama must be installed separately and the relevant models pulled
+(`deepseek-ocr` for vision, `gemma4:31b-cloud` for summaries by default).
 
-Run indefinitely:
+## Running
 
-```bash
-python screen_ocr.py --run no-stop
-```
+| Task | Command |
+|---|---|
+| Watch screen | `python -m cli.screen --run no-stop` |
+| Watch screen, fixed count | `python -m cli.screen --run 5` |
+| Watch camera | `python -m cli.camera --run no-stop` |
+| Override interval | `python -m cli.screen --run no-stop --interval 10` |
+| Archive each processed image | `python -m cli.screen --run no-stop --archive-images` |
+| Preview crop box | `python -m cli.test_crop` |
+| Override crop box | `python -m cli.test_crop --crop-box 350,250,1350,850` |
+| Summarize responses | `python -m cli.summarize` |
+| Disable summary thinking | `python -m cli.summarize --think=false` |
+| Run summary + Discord watcher | `python -m cli.watch` |
+| Include the partial batch | `python -m cli.watch --all` |
+| Render PDF pages to images | `python -m extras.pdf_images notes.pdf --output-dir pdf_images` |
+| Run Ollama OCR on a folder | `python -m pipelines.image_ocr content/images/RAG-1` |
+| Watch image-folder OCR | `python -m pipelines.image_ocr_summary content/images/RAG-1` |
+| Extract distinct video frames | `python -m extras.video_frames clip.mp4` |
+| Whisper transcribe | `python -m extras.whisper clip.mp4` |
 
-Run five screenshot checks:
+## Module layout
 
-```bash
-python screen_ocr.py --run 5
-```
+| Package | Role |
+|---|---|
+| `cli/` | Thin entry-point scripts (argparse + `main`). |
+| `core/` | Config, runtime, event log, state store, file artifacts, env loader. |
+| `ollama/` | Ollama subprocess client. |
+| `sinks/` | Output destinations (Discord). |
+| `capture/` | Input sources (screen, camera). |
+| `summary/` | Batching and watcher logic for summarization. |
+| `pipelines/` | Higher-level orchestrators (image-folder OCR, watcher). |
+| `extras/` | Standalone tools (PDF render, video frames, Whisper). |
+| `docs/` | Architecture, vision, refactor notes, ideas. |
 
-Run the laptop camera pipeline:
+## Output paths
 
-```bash
-python camera_ocr.py --run no-stop
-```
+- `responses.jsonl` — screen OCR responses (append-only, one JSON per line).
+- `camera_responses.jsonl` — camera OCR responses.
+- `data/ocr-output/<folder>/responses.jsonl` — image-folder OCR.
+- `summaries.json` — batched summaries (atomic write).
+- `state.json` — watcher progress (Discord post tracking, cursors).
+- `archive/img_TIMESTAMP.png` — archived screenshots when `--archive-images` is passed.
 
-Summarize screen OCR responses in batches of 20:
+## Config
 
-```bash
-python summarize_responses.py
-```
+Defaults live in `core/config.py`. Crop box uses absolute screenshot
+coordinates: `CROP_BOX = (left, top, right, bottom)`. The Discord webhook
+URL is read from `DISCORD_WEBHOOK_URL` in `.env`.
 
-Run the summary and Discord watcher as a separate process:
+The camera pipeline does not crop — it saves the full frame to `img.png`,
+passes that to Ollama, and writes responses to `camera_responses.jsonl`.
+Set `CAMERA_OLLAMA_QUESTION` in `core/config.py` for the camera prompt.
 
-```bash
-python summary_watcher.py
-```
+The summary pipeline currently reads only `responses.jsonl`. It sends each
+batch of response strings to the configured summary model and saves records
+in `summaries.json` with source timestamp and response ID ranges.
 
-Post the current partial summary batch too:
-
-```bash
-python summary_watcher.py --all
-```
-
-Disable thinking explicitly for summaries:
-
-```bash
-python summarize_responses.py --think=false
-```
-
-Change the interval:
-
-```bash
-python screen_ocr.py --run no-stop --interval 10
-```
-
-Archive every changed image after Ollama finishes:
-
-```bash
-python screen_ocr.py --run no-stop --archive-images
-```
-
-Test the crop box:
-
-```bash
-python test_crop.py
-```
-
-Override the crop box for a preview:
-
-```bash
-python test_crop.py --crop-box 350,250,1350,850
-```
-
-Convert a PDF into page images:
-
-```bash
-python -m extra_features.pdf_images notes.pdf --output-dir pdf_images
-```
-
-Extract visually distinct frames from a video:
-
-```bash
-python -m extra_features.video_distinct_frames lecture.mp4 --output-dir frames
-```
-
-Frames with at least 80% downscaled pixel similarity to an already kept frame
-are skipped by default.
-
-Transcribe a video with the local OpenAI Whisper CLI:
-
-```bash
-python -m extra_features.openai_video_transcription lecture.mp4
-```
-
-This requires `ffmpeg` and the `whisper` CLI. Install Whisper with:
-
-```bash
-brew install openai-whisper
-```
-
-Run Ollama OCR over an image folder:
-
-```bash
-python -m pipelines.image_ollama_ocr content/images/RAG-1
-```
-
-Outputs are written to `data/ocr-output/<image-folder>/responses.jsonl`. The
-pipeline rests for a random 5-7 seconds between OCR calls by default.
-
-Summarize and post image-folder OCR output:
-
-```bash
-python -m pipelines.image_ocr_summary_watcher content/images/RAG-1
-```
-
-This watcher consumes available OCR rows in batches of 10, including the final
-partial batch, posts summaries to Discord, and stores per-folder summaries next
-to the OCR output as `data/ocr-output/<image-folder>/summaries.json`.
-
-Responses are appended to `responses.jsonl`. The temporary crop is written as
-`img.png` before calling Ollama and deleted after the response arrives. With
-`--archive-images`, the processed `img.png` is moved to
-`archive/img_TIMESTAMP.png` instead.
-
-Defaults live in `config.py`. The crop box uses absolute screenshot coordinates:
-`CROP_BOX = (left, top, right, bottom)`.
-
-The camera pipeline does not crop. It saves the full camera frame to `img.png`,
-passes that same `img.png` to Ollama, and writes responses to
-`camera_responses.jsonl` by default. Set `CAMERA_OLLAMA_QUESTION` in
-`config.py` for the camera prompt.
-
-The summary pipeline currently reads only `responses.jsonl`. It sends each batch
-of response strings to the configured summary model and saves records in
-`summaries.json` with source timestamp and response ID ranges. It passes the
-configured `--think` value to Ollama.
-
-The watcher pipeline is decoupled from screen capture. Run `screen_ocr.py` in
-one terminal and `summary_watcher.py` in another. The watcher polls
-`responses.jsonl`, summarizes new complete batches, posts unposted summaries to
-Discord using `DISCORD_WEBHOOK_URL` from `.env`, and tracks posting progress in
-`state.json`. By default it waits for complete batches; pass `--all` when you
-want it to summarize and post the final partial batch too.
-
-## Module Layout
-
-The code is split by pipeline responsibility:
-
-- `runtime.py` - run modes, signal handling, timestamps, text coercion.
-- `ollama_client.py` - all Ollama subprocess calls.
-- `event_log.py` - append-only JSONL response records and response IDs.
-- `file_artifacts.py` - temp image cleanup and archive moves.
-- `state_store.py` - JSON state load/save.
-- `env_loader.py` - `.env` loading.
-- `discord_sink.py` - Discord webhook posting.
-- `extra_features/` - standalone capabilities such as PDF page rendering.
-- `pipelines/` - orchestration modules for larger workflows.
-- `summarize_responses.py` - batch summary processor.
-- `summary_watcher.py` - response-log watcher and Discord dispatcher.
-- `utils.py` - compatibility re-exports for older imports.
+The watcher is decoupled from screen capture: run `python -m cli.screen` in
+one terminal and `python -m cli.watch` in another. The watcher polls
+`responses.jsonl`, summarizes new complete batches, posts unposted summaries
+to Discord, and tracks posting progress in `state.json`. Pass `--all` to
+include the final partial batch.
