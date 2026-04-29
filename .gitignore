@@ -9,6 +9,7 @@ camera_responses.jsonl
 summaries.json
 state.json
 data/ocr-output/
+content/
 archive/
 camera_archive/
 .env
