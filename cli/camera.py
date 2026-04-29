@@ -4,25 +4,23 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-import cv2
-
-import config
-from event_log import append_response
-from file_artifacts import finish_temp_image, remove_temp_image
-from ollama_client import run_ollama
-from runtime import (
+from capture.camera import capture_camera_frame
+from core import config
+from core.event_log import append_response
+from core.file_artifacts import finish_temp_image, remove_temp_image
+from core.runtime import (
     StopRequested,
     as_text,
     install_signal_handlers,
     parse_run,
     should_continue,
 )
+from ollama.client import run_ollama
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -88,36 +86,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seconds to wait for Ollama before recording a timeout.",
     )
     return parser
-
-
-def capture_camera_frame(
-    image_path: Path,
-    *,
-    camera_index: int,
-    warmup_frames: int,
-) -> tuple[str, tuple[int, int]]:
-    image_path.parent.mkdir(parents=True, exist_ok=True)
-    camera = cv2.VideoCapture(camera_index)
-    try:
-        if not camera.isOpened():
-            raise RuntimeError(f"could not open camera index {camera_index}")
-
-        frame = None
-        frames_to_read = max(1, warmup_frames + 1)
-        for _ in range(frames_to_read):
-            ok, frame = camera.read()
-            if not ok or frame is None:
-                raise RuntimeError(f"could not read from camera index {camera_index}")
-
-        written = cv2.imwrite(str(image_path), frame)
-        if not written:
-            raise RuntimeError(f"could not write camera image to {image_path}")
-
-        digest = hashlib.sha256(frame.tobytes()).hexdigest()
-        height, width = frame.shape[:2]
-        return digest, (width, height)
-    finally:
-        camera.release()
 
 
 def main() -> int:

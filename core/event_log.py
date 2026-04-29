@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from runtime import utc_now
+from core.runtime import utc_now
 
 
 def make_response_id(

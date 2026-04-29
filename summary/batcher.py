@@ -6,14 +6,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import random
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
-import config
-from ollama_client import run_ollama_prompt
-from runtime import as_text, utc_now
+from core import config
+from ollama.client import run_ollama_prompt
+from core.runtime import as_text, utc_now
 
 
 class SummaryRunResult:
@@ -297,6 +299,8 @@ def summarize_pending(
     rerun: bool = False,
     verbose: bool = True,
     source: str = "responses",
+    rest_min: float = 0,
+    rest_max: float = 0,
 ) -> SummaryRunResult:
     entries = read_response_entries(input_path)
     if not entries:
@@ -339,6 +343,11 @@ def summarize_pending(
         created_summaries.append(summary)
         save_summaries(output_path, summaries)
         created += 1
+        if rest_max > 0:
+            rest_seconds = random.uniform(rest_min, rest_max)
+            if verbose:
+                print(f"resting {rest_seconds:.1f}s before next summary batch")
+            time.sleep(rest_seconds)
 
     return SummaryRunResult(
         created=created,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 
-import config
+from core import config
 
 
 def build_ollama_prompt(question: str) -> str:
