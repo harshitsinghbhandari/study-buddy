@@ -102,3 +102,18 @@ one terminal and `summary_watcher.py` in another. The watcher polls
 Discord using `DISCORD_WEBHOOK_URL` from `.env`, and tracks posting progress in
 `state.json`. By default it waits for complete batches; pass `--all` when you
 want it to summarize and post the final partial batch too.
+
+## Module Layout
+
+The code is split by pipeline responsibility:
+
+- `runtime.py` - run modes, signal handling, timestamps, text coercion.
+- `ollama_client.py` - all Ollama subprocess calls.
+- `event_log.py` - append-only JSONL response records and response IDs.
+- `file_artifacts.py` - temp image cleanup and archive moves.
+- `state_store.py` - JSON state load/save.
+- `env_loader.py` - `.env` loading.
+- `discord_sink.py` - Discord webhook posting.
+- `summarize_responses.py` - batch summary processor.
+- `summary_watcher.py` - response-log watcher and Discord dispatcher.
+- `utils.py` - compatibility re-exports for older imports.

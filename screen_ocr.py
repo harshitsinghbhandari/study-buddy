@@ -13,15 +13,14 @@ from pathlib import Path
 from PIL import ImageGrab
 
 import config
-from utils import (
+from event_log import append_response
+from file_artifacts import finish_temp_image, remove_temp_image
+from ollama_client import run_ollama
+from runtime import (
     StopRequested,
-    append_response,
     as_text,
-    finish_temp_image,
     install_signal_handlers,
     parse_run,
-    remove_temp_image,
-    run_ollama,
     should_continue,
 )
 
@@ -133,7 +132,7 @@ def main() -> int:
                         args.timeout,
                     )
                     status = "ok" if returncode == 0 else "ollama_error"
-                    error = "" if returncode == 0 else stderr
+                    error = "" if returncode == 0 or returncode is None else stderr
                 except subprocess.TimeoutExpired as exc:
                     status = "timeout"
                     response = as_text(exc.stdout)

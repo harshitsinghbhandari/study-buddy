@@ -13,15 +13,14 @@ from pathlib import Path
 import cv2
 
 import config
-from utils import (
+from event_log import append_response
+from file_artifacts import finish_temp_image, remove_temp_image
+from ollama_client import run_ollama
+from runtime import (
     StopRequested,
-    append_response,
     as_text,
-    finish_temp_image,
     install_signal_handlers,
     parse_run,
-    remove_temp_image,
-    run_ollama,
     should_continue,
 )
 
