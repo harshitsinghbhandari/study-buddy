@@ -1,61 +1,74 @@
 # Refactor Notes
 
-## Status: DONE
+## Phase 0: Package reorganization — DONE
 
-The flat root layout has been fully migrated to module packages.
+The flat root layout was migrated to module packages. See git history for the
+full file mapping.
 
-## What changed
+## Phase 1: Pipeline runtime — DONE
 
-| Old path | New path |
+Extracted the common pipeline shape into a typed node protocol.
+
+| New path | Role |
 |---|---|
-| `config.py` | `core/config.py` |
-| `runtime.py` | `core/runtime.py` |
-| `event_log.py` | `core/event_log.py` |
-| `state_store.py` | `core/state_store.py` |
-| `file_artifacts.py` | `core/file_artifacts.py` |
-| `env_loader.py` | `core/env_loader.py` |
-| `ollama_client.py` | `ollama/client.py` |
-| `discord_sink.py` | `sinks/discord.py` |
-| `screen_ocr.py` | `cli/screen.py` + `capture/screen.py` |
-| `camera_ocr.py` | `cli/camera.py` + `capture/camera.py` |
-| `summarize_responses.py` | `summary/batcher.py` + `cli/summarize.py` |
-| `summary_watcher.py` | `summary/watcher.py` + `cli/watch.py` |
-| `test_crop.py` | `cli/test_crop.py` |
-| `pipelines/image_ollama_ocr.py` | `pipelines/image_ocr.py` |
-| `pipelines/image_ocr_summary_watcher.py` | `pipelines/image_ocr_summary.py` |
-| `extra_features/pdf_images.py` | `extras/pdf_images.py` |
-| `extra_features/video_distinct_frames.py` | `extras/video_frames.py` |
-| `extra_features/openai_video_transcription.py` | `extras/whisper.py` |
+| `runtime/protocol.py` | `Node`, `Source`, `Processor`, `Sink` base classes |
+| `runtime/context.py` | `PipelineContext` — state, checkpoints, event logging |
+| `runtime/runner.py` | `LinearRunner` — wires nodes through asyncio queues |
+| `runtime/registry.py` | `@register("type.name")` decorator + lookup |
+| `runtime/loader.py` | YAML loading, `PipelineDef`, topological sort |
+| `nodes/sources/screen.py` | Periodic screen crop capture |
+| `nodes/sources/camera.py` | Periodic camera frame capture |
+| `nodes/sources/folder.py` | Iterate images in a folder |
+| `nodes/processors/hash_dedup.py` | Skip items with duplicate hash keys |
+| `nodes/processors/ollama_ocr.py` | Ollama OCR subprocess |
+| `nodes/processors/ollama_summarize.py` | Batch + summarize with Ollama |
+| `nodes/sinks/jsonl.py` | Append items as JSONL |
+| `nodes/sinks/discord.py` | Post text to Discord webhook |
 
-## What was deleted
+### Deleted (superseded by nodes)
 
-| File | Reason |
+| Old path | Reason |
 |---|---|
-| `utils.py` | Compatibility shim, no longer needed |
-| `pipelines/image-ocr-summary-watcher.py` | Legacy hyphenated wrapper |
-| `pipelines/image-ollama-ocr.py` | Legacy hyphenated wrapper |
-| `pipelines/summarize_ocr_folder_once.py` | Broken untracked file with stale imports |
-| `ocr_all_content.sh` | Stale module paths |
-| `process_visual_multimodal.sh` | Stale module paths |
-| `run_study_batch.sh` | Stale module paths |
+| `cli/screen.py`, `cli/camera.py` | Replaced by `cli/pipeline.py run` |
+| `cli/summarize.py`, `cli/watch.py` | Replaced by pipeline definitions |
+| `cli/test_crop.py` | Manual helper, no longer needed |
+| `capture/` package | Logic moved to `nodes/sources/` |
+| `summary/batcher.py`, `summary/watcher.py` | Logic moved to `nodes/processors/` |
+| `pipelines/image_ocr.py`, `pipelines/image_ocr_summary.py` | Replaced by YAML defs + runner |
 
-## Run commands
+## Phase 2: SQLite — DONE
 
-| Task | Command |
+| New path | Role |
 |---|---|
-| Watch screen | `python -m cli.screen [--run no-stop\|N] [--interval S]` |
-| Watch camera | `python -m cli.camera [--run no-stop\|N]` |
-| Summarize responses | `python -m cli.summarize` |
-| Run summary watcher | `python -m cli.watch [--all] [--once]` |
-| Preview crop | `python -m cli.test_crop [--crop-box L,T,R,B]` |
-| Render PDF pages | `python -m extras.pdf_images <file.pdf>` |
-| Run image-folder OCR | `python -m pipelines.image_ocr <folder>` |
-| Watch image-folder OCR | `python -m pipelines.image_ocr_summary <folder>` |
-| Extract distinct video frames | `python -m extras.video_frames <video>` |
-| Whisper transcribe | `python -m extras.whisper <media>` |
+| `core/db.py` | SQLite `Database` class with full CRUD |
 
-## Remaining known issues
+Tables: `meta`, `pipelines`, `runs`, `events`, `state`, `checkpoints`.
+Integrated into `PipelineContext` and `LinearRunner`.
 
-- Top-level `ollama/` shadows the PyPI `ollama` package. Acceptable while shelling out to the CLI; revisit if adopting the Python SDK.
-- `cli/` entry points duplicate argparse setup with the modules they delegate to. The Node protocol (see `VISION.md`) is the planned fix.
-- No automated tests yet.
+## Phase 3: FastAPI API — DONE
+
+| New path | Role |
+|---|---|
+| `api/app.py` | FastAPI app factory with CORS + lifespan |
+| `api/dependencies.py` | Shared `db` and `_active_runners` state |
+| `api/routes/nodes.py` | `GET /nodes` |
+| `api/routes/pipelines.py` | CRUD + `POST /pipelines/{id}/start|stop` |
+| `api/routes/runs.py` | List/get runs, `GET /runs/{id}/logs` SSE |
+| `cli/pipeline.py` | CLI with `run`, `api`, `nodes` subcommands |
+
+## Current module layout
+
+```
+screen-ocr/
+├── runtime/          Pipeline runtime (protocol, runner, registry, loader)
+├── nodes/            Node implementations (sources/, processors/, sinks/)
+├── api/              FastAPI backend (app, routes)
+├── core/             Shared infra (config, db, env_loader)
+├── ollama/           Ollama subprocess client (legacy)
+├── sinks/            Discord sink (legacy)
+├── extras/           Standalone tools (pdf, video, whisper)
+├── pipelines/defs/   YAML pipeline definitions
+├── cli/              CLI entry point
+├── tests/            Pytest suite (17 tests)
+└── docs/             Architecture, vision, ideas, refactor notes
+```

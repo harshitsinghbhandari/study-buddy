@@ -1,83 +1,121 @@
 # Current Architecture
 
-Snapshot of the system after the cli/core/ollama/... refactor.
+Snapshot of the system after Phases 1–3 (pipeline runtime, SQLite, FastAPI).
 
 ## Module layout
 
 | Package | Role |
 |---|---|
-| `cli/` | Thin entry-point scripts. Argparse + `main()`. Run via `python -m cli.<name>`. |
-| `core/` | Shared infrastructure: config, runtime, event log, state store, file artifacts, env loader. |
-| `ollama/` | Ollama subprocess client. |
-| `sinks/` | Output destinations (Discord webhook). |
-| `capture/` | Input sources (screen grab, camera frame). |
-| `summary/` | Batching and watcher logic for summarization. |
-| `pipelines/` | Higher-level orchestrators (image-folder OCR, image-folder summary watcher). |
-| `extras/` | Standalone tools (PDF to images, video distinct-frame extraction, Whisper). |
-| `docs/` | Vision, architecture, refactor notes, idea dump. |
+| `runtime/` | Pipeline runtime: Node protocol, async runner, YAML loader, registry. |
+| `nodes/` | All node implementations grouped by kind (sources, processors, sinks). |
+| `api/` | FastAPI backend — pipeline CRUD, run tracking, SSE log streaming. |
+| `core/` | Shared infrastructure: config, env loader, SQLite database layer. |
+| `ollama/` | Ollama subprocess client (legacy, used by `extras/`). |
+| `sinks/` | Discord webhook sink (legacy, used by `extras/`). |
+| `extras/` | Standalone tools (PDF→images, video frames, Whisper). |
+| `pipelines/defs/` | YAML pipeline definitions. |
+| `cli/` | Single CLI entry point with subcommands (`run`, `api`, `nodes`). |
+| `docs/` | Vision, architecture, refactor notes, ideas. |
+| `tests/` | Pytest suite (17 tests). |
 
 ## Data flow
 
 ```
-Screen ─ ImageGrab.grab + crop ─┐
-Camera ─ cv2.VideoCapture ──────┼─► img.png ─► ollama run deepseek-ocr ─► responses.jsonl
-Folder ─ image files ───────────┘                                          │
-                                                                            ▼
-                                              summarize batches (gemma4:31b-cloud)
-                                                              │
-                                                              ▼
-                                                        summaries.json
-                                                              │
-                                                              ▼
-                                            summary watcher ─► Discord webhook
-                                                              │
-                                                              ▼
-                                                         state.json
+YAML definition ─► loader ─► instantiate nodes from registry
+                                         │
+                                         ▼
+Source ─[queue]─► Processor ─[queue]─► Sink    (LinearRunner, asyncio)
+                                         │
+                                         ▼
+                                    SQLite DB
+                              (events, state, checkpoints)
+                                         │
+                                         ▼
+                                   FastAPI API
+                              (/pipelines, /runs, /nodes)
 ```
 
-Hashes provide change-detection (skip duplicate frames) and stable
-`response_id`s for idempotent batching. State files plus atomic temp-file
-writes make watchers crash-safe.
+Nodes communicate through async queues. The runner creates one queue per edge,
+drives all nodes concurrently via `asyncio.create_task`, and writes events to
+SQLite through `PipelineContext`. The API server exposes pipeline CRUD and
+start/stop over HTTP.
 
-## External dependencies
+## Node types
 
-- Python: `Pillow` (screen grab), `opencv-python` (camera + video frames),
-  `PyMuPDF` (PDF render). Stdlib for everything else.
-- Services: **Ollama** CLI on `PATH` (`deepseek-ocr` for vision,
-  `gemma4:31b-cloud` for summary). **Discord webhook** via `urllib.request`,
-  URL from `DISCORD_WEBHOOK_URL` env var.
-- Optional: **ffmpeg** + **whisper** CLIs for `extras/whisper.py`.
+| Kind | Type key | Description |
+|---|---|---|
+| Source | `source.screen` | Periodic screen crop capture with hash change-detection |
+| Source | `source.camera` | Periodic camera frame capture |
+| Source | `source.folder` | Iterate images in a folder |
+| Processor | `processor.hash_dedup` | Skip items with duplicate hash keys |
+| Processor | `processor.ollama_ocr` | Async Ollama OCR subprocess call |
+| Processor | `processor.ollama_summarize` | Batch responses and summarize with Ollama |
+| Sink | `sink.jsonl` | Append items as JSONL records |
+| Sink | `sink.discord` | Post text to a Discord webhook |
 
-## Configuration
+Each node declares a `_params_schema` dict used by `GET /nodes` to advertise
+configurable parameters.
 
-All defaults live in `core/config.py`. Per-process overrides come from CLI
-flags. Discord webhook is the only env-loaded value (`.env` parsed by
-`core/env_loader.py`).
+## API endpoints
 
-## Caveats
+| Method | Path | Description |
+|---|---|---|
+| GET | `/nodes` | List registered node types with param schemas |
+| GET | `/pipelines` | List saved pipelines |
+| POST | `/pipelines` | Create pipeline (validates YAML) |
+| GET | `/pipelines/{id}` | Get pipeline definition |
+| DELETE | `/pipelines/{id}` | Delete pipeline |
+| POST | `/pipelines/{id}/start` | Start a pipeline run |
+| POST | `/pipelines/{id}/stop` | Stop a running pipeline |
+| GET | `/runs` | List all runs |
+| GET | `/runs/{id}` | Run status |
+| GET | `/runs/{id}/logs` | SSE event stream |
 
-- `ollama/` shadows the PyPI `ollama` package. If we ever depend on the Python
-  Ollama SDK, rename to `ollama_client/` or move under a top-level
-  `screen_ocr/` package.
-- No automated tests yet. `cli/test_crop.py` is a manual visual helper.
-- Pipelines, capture loops, and summary watchers each have their own argparse
-  + run loop. The Vision doc (`VISION.md`) proposes consolidating them under
-  a single Node protocol.
+## SQLite schema
+
+| Table | Purpose |
+|---|---|
+| `pipelines` | Saved pipeline definitions (name, YAML) |
+| `runs` | Run instances with status + timestamps |
+| `events` | Per-node log events (item_emitted, item_consumed, error, log) |
+| `state` | Generic key/value state store (replaces `state.json`) |
+| `checkpoints` | Per-node cursor for resume-after-crash |
+
+## CLI
+
+```bash
+python -m cli.pipeline run <yaml> [--db <path>]    # Run a pipeline directly
+python -m cli.pipeline api [--host 127.0.0.1] [--port 8000]  # Start API server
+python -m cli.pipeline nodes                        # List registered node types
+```
+
+## Dependencies
+
+- **Runtime**: `PyYAML` (pipeline definitions)
+- **Screen capture**: `Pillow` (ImageGrab)
+- **Camera + video**: `opencv-python`
+- **PDF**: `PyMuPDF` (extras only)
+- **API**: `fastapi`, `uvicorn`, `httpx`
+- **Services**: Ollama CLI on PATH, Discord webhook (optional)
+- **Optional**: ffmpeg + whisper CLIs for `extras/whisper.py`
 
 ## What's done
 
-- [x] Flat root layout reorganized into `cli/core/ollama/sinks/capture/summary/extras/pipelines` packages.
-- [x] Dead code removed (`utils.py`, hyphenated wrappers, broken scripts).
-- [x] `extra_features/` renamed to `extras/` with shorter file names.
-- [x] Capture logic extracted from CLI scripts into `capture/` for reuse.
-- [x] All imports verified and passing.
+- [x] Modular package layout (`core/ollama/sinks/extras/`)
+- [x] Node protocol (`Source`, `Processor`, `Sink`) with async `run()`
+- [x] LinearRunner wiring nodes through asyncio queues
+- [x] YAML pipeline definitions with topological sort
+- [x] 8 node types (3 sources, 3 processors, 2 sinks)
+- [x] SQLite state store, event log, run tracking, checkpoints
+- [x] FastAPI backend with CRUD, start/stop, SSE logs
+- [x] Single CLI with subcommands
+- [x] `pyproject.toml` with pytest config
+- [x] 17 passing tests
 
 ## What's left
 
-See `docs/IDEAS.md` and `docs/VISION.md` for the full backlog. Highlights:
-
-- [ ] Automated tests (pure-function tests for `core.event_log`, `summary.batcher`, `core.env_loader`).
-- [ ] `pyproject.toml` with linting, type checking, and `[project.scripts]` entries.
-- [ ] Single `screen-ocr` CLI with subcommands instead of separate `python -m` scripts.
-- [ ] Collapse duplicate summary watchers (`summary/watcher.py` and `pipelines/image_ocr_summary.py`).
-- [ ] Node protocol and pipeline runtime (see `VISION.md`).
+- [ ] Phase 4: React dashboard (React Flow canvas, node palette, run panel)
+- [ ] Phase 5: Expand node library (file_watcher, webhook, RSS, Slack, etc.)
+- [ ] DAG runner (branching pipelines — current runner is linear only)
+- [ ] Container image
+- [ ] Auth / multi-user

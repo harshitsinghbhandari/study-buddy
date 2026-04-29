@@ -1,73 +1,139 @@
-# Screen OCR Watcher
+# Screen OCR
 
-Capture screen crops, camera frames, or image folders; OCR them through a local Ollama model; summarize batches and post to Discord.
+A modular **capture → process → sink** pipeline platform. Define pipelines in
+YAML, run them locally, manage via API or CLI.
 
-## Setup
+## What it does
+
+Capture screen crops, camera frames, or image folders; OCR them through a local
+Ollama model; summarize batches and post to Discord. Or wire any combination of
+sources, processors, and sinks through YAML pipeline definitions.
+
+## Quick start
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Requires [Ollama](https://ollama.com) running locally with `deepseek-ocr` pulled. For summaries, pull `gemma4:31b-cloud` (or set `--model`).
+Requires [Ollama](https://ollama.com) running locally with `deepseek-ocr` pulled.
+For summaries, pull `gemma4:31b-cloud`.
 
-## Usage
-
-### Screen OCR
-
-```bash
-python -m cli.screen --run no-stop
-python -m cli.screen --run 5
-python -m cli.screen --run no-stop --interval 10
-python -m cli.screen --run no-stop --archive-images
-```
-
-### Camera OCR
+### Run a pipeline
 
 ```bash
-python -m cli.camera --run no-stop
+python -m cli.pipeline run pipelines/defs/screen-ocr.yaml
+python -m cli.pipeline run pipelines/defs/camera-ocr.yaml --db my_runs.db
 ```
 
-### Summarize responses
+### Start the API server
 
 ```bash
-python -m cli.summarize
-python -m cli.summarize --think=false
+python -m cli.pipeline api --port 8000
 ```
 
-### Summary watcher (summarize + post to Discord)
+Then:
 
 ```bash
-python -m cli.watch
-python -m cli.watch --all
-python -m cli.watch --once
+# List available node types
+curl http://localhost:8000/nodes
+
+# Create a pipeline
+curl -X POST http://localhost:8000/pipelines \
+  -H "Content-Type: application/json" \
+  -d '{"name": "screen-ocr", "definition_yaml": "..."}'
+
+# Start a run
+curl -X POST http://localhost:8000/pipelines/1/start
+
+# Stream logs
+curl http://localhost:8000/runs/1/logs
+
+# List runs
+curl http://localhost:8000/runs
 ```
 
-Set `DISCORD_WEBHOOK_URL` in `.env` for Discord posting.
-
-### Crop preview
+### List registered node types
 
 ```bash
-python -m cli.test_crop
-python -m cli.test_crop --crop-box 350,250,1350,850
+python -m cli.pipeline nodes
 ```
 
-### Image-folder OCR
+## Node types
 
-```bash
-python -m pipelines.image_ocr content/images/RAG-1
+| Kind | Type | Description |
+|---|---|---|
+| Source | `source.screen` | Periodic screen crop with hash dedup |
+| Source | `source.camera` | Periodic camera frame capture |
+| Source | `source.folder` | Iterate images in a folder |
+| Processor | `processor.hash_dedup` | Skip duplicate items by hash |
+| Processor | `processor.ollama_ocr` | OCR via Ollama subprocess |
+| Processor | `processor.ollama_summarize` | Batch summarize via Ollama |
+| Sink | `sink.jsonl` | Append to JSONL file |
+| Sink | `sink.discord` | Post to Discord webhook |
+
+## Project layout
+
+```
+screen-ocr/
+├── runtime/          Pipeline runtime (protocol, runner, registry, loader)
+├── nodes/            Node implementations
+│   ├── sources/      screen, camera, folder
+│   ├── processors/   hash_dedup, ollama_ocr, ollama_summarize
+│   └── sinks/        jsonl, discord
+├── api/              FastAPI backend
+│   └── routes/       /nodes, /pipelines, /runs
+├── core/             Config, SQLite database, env loader
+├── ollama/           Ollama subprocess client
+├── extras/           Standalone tools (PDF, video frames, Whisper)
+├── pipelines/defs/   YAML pipeline definitions
+├── cli/              CLI entry point
+├── tests/            Pytest suite (17 tests)
+└── docs/             Architecture, vision, ideas, refactor notes
 ```
 
-Outputs to `data/ocr-output/<folder>/responses.jsonl`.
+## Pipeline YAML format
 
-### Image-folder OCR summary watcher
-
-```bash
-python -m pipelines.image_ocr_summary content/images/RAG-1
+```yaml
+name: screen-ocr
+nodes:
+  - id: grab
+    type: source.screen
+    params:
+      crop_box: [350, 250, 1350, 850]
+      interval: 10
+  - id: dedup
+    type: processor.hash_dedup
+  - id: ocr
+    type: processor.ollama_ocr
+    params:
+      model: deepseek-ocr
+  - id: out
+    type: sink.jsonl
+    params:
+      path: data/ocr-output/responses.jsonl
+edges:
+  - [grab, dedup]
+  - [dedup, ocr]
+  - [ocr, out]
 ```
 
-### Extras
+## API endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/nodes` | List registered node types with param schemas |
+| GET | `/pipelines` | List saved pipelines |
+| POST | `/pipelines` | Create pipeline |
+| GET | `/pipelines/{id}` | Get pipeline definition |
+| DELETE | `/pipelines/{id}` | Delete pipeline |
+| POST | `/pipelines/{id}/start` | Start a run |
+| POST | `/pipelines/{id}/stop` | Stop a run |
+| GET | `/runs` | List all runs |
+| GET | `/runs/{id}` | Run status |
+| GET | `/runs/{id}/logs` | SSE event stream |
+
+## Extras
 
 ```bash
 python -m extras.pdf_images notes.pdf --output-dir pdf_images
@@ -75,26 +141,14 @@ python -m extras.video_frames lecture.mp4 --output-dir frames
 python -m extras.whisper lecture.mp4
 ```
 
-## Module Layout
-
-| Package | Role |
-|---|---|
-| `cli/` | Entry-point scripts. `python -m cli.<name>` to run. |
-| `core/` | Shared infrastructure: config, runtime helpers, event log, state store, file artifacts, env loader. |
-| `capture/` | Input sources: screen grab, camera frame. |
-| `ollama/` | Ollama subprocess client. |
-| `sinks/` | Output destinations (Discord webhook). |
-| `summary/` | Batching and watcher logic for summarization. |
-| `pipelines/` | Higher-level orchestrators (image-folder OCR, image-folder summary watcher). |
-| `extras/` | Standalone tools (PDF to images, video frame extraction, Whisper transcription). |
-
-Configuration lives in `core/config.py`. The crop box uses absolute screenshot coordinates: `CROP_BOX = (left, top, right, bottom)`.
-
 ## Dependencies
 
-- Python: `Pillow` (screen grab), `opencv-python` (camera + video frames), `PyMuPDF` (PDF render).
-- Services: Ollama CLI on `PATH`.
-- Optional: `ffmpeg` + `whisper` CLIs for `extras/whisper.py`.
+- **Runtime**: `PyYAML`
+- **Capture**: `Pillow` (screen), `opencv-python` (camera/video)
+- **PDF**: `PyMuPDF` (extras only)
+- **API**: `fastapi`, `uvicorn`, `httpx`
+- **Services**: Ollama CLI on `PATH`
+- **Optional**: ffmpeg + whisper CLIs for extras
 
 ## License
 

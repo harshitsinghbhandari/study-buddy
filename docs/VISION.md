@@ -18,14 +18,23 @@ Three independent things that often get conflated:
 3. **A dashboard** — web UI to build, start, stop, and inspect pipelines and
    view live logs/outputs.
 
-The current code already contains #1 and #2 implicitly: every script is a
-hardcoded pipeline. The work is *extracting* that shape, not inventing it.
-
 ## Current state
 
-The modular refactor is complete. Each pipeline is now a clean composition of
-packages (`capture/` → `ollama/` → `core/event_log` → `summary/` → `sinks/`).
-The next step is extracting the common shape into a `Node` protocol.
+Steps 1–3 of the sequencing plan below are **done**:
+
+- **Node protocol** (`runtime/protocol.py`): `Source`, `Processor`, `Sink` base
+  classes with `configure(params)` + `async run(inbox, outbox, ctx)`.
+- **8 node types** in `nodes/` (3 sources, 3 processors, 2 sinks) with
+  `@register("type.name")` decorator and JSON param schemas.
+- **LinearRunner** (`runtime/runner.py`) wires nodes through asyncio queues,
+  persists events/state/checkpoints to SQLite via `PipelineContext`.
+- **YAML definitions** in `pipelines/defs/` loaded with topological sort.
+- **SQLite** (`core/db.py`) for pipelines, runs, events, state, checkpoints.
+- **FastAPI** (`api/`) with CRUD, start/stop, SSE log streaming.
+- **CLI** (`cli/pipeline.py`) with `run`, `api`, `nodes` subcommands.
+- **17 passing tests**.
+
+Next: **Phase 4 — React dashboard**.
 
 ## Proposed shape
 
@@ -49,46 +58,38 @@ Three node kinds, all the same protocol:
 
 ### Pipeline
 
-A pipeline is a DAG of node instances + edges, stored as JSON. The runtime
-instantiates nodes from a registry, wires queues between them, runs them as
-async tasks, and persists checkpoints.
+A pipeline is a linear chain of node instances (DAG support planned), stored as
+YAML. The runtime instantiates nodes from a registry, wires queues between them,
+runs them as async tasks, and persists checkpoints to SQLite.
 
 ### Dashboard
 
 Thin layer over the same runtime:
 
-- **Backend**: FastAPI exposing `/pipelines`, `/runs`, `/nodes` (registry),
-  `/logs/stream` (SSE/WebSocket).
+- **Backend**: FastAPI — `/pipelines`, `/runs`, `/nodes` (registry),
+  `/runs/{id}/logs` (SSE). **Done.**
 - **Frontend**: React + React Flow for the canvas. Node palette and config
-  forms generated from each node's JSON schema. Live runs panel.
-- **CLI**: thin client over the same API — no duplicated logic.
+  forms generated from each node's JSON schema. Live runs panel. **Next.**
+- **CLI**: thin client over the same API — no duplicated logic. **Done.**
 
-## Decisions to make
+## Decisions made
 
-| Decision | Options | Lean |
+| Decision | Choice | Rationale |
 |---|---|---|
-| Build vs adopt | Roll our own / Prefect / Dagster / n8n / Node-RED | **Adopt** if "have it working" matters most. **Build** if learning is the point. |
-| Concurrency | asyncio queues / threads+processes | **asyncio** (most work is subprocess + HTTP) |
-| Storage | files / SQLite | **SQLite** for pipeline defs, runs, logs, checkpoints. Files for raw artifacts. |
-| Graph shape | linear / DAG | **Start linear**, add branches when needed |
-| Auth | none / real auth | **Localhost only** for v1 |
-| Plugins | in-tree / entry points | **In-tree** v1, plugin protocol v2 |
+| Build vs adopt | **Build** | Learning + portfolio goal, OCR-domain abstractions |
+| Concurrency | **asyncio** | Most work is subprocess + HTTP I/O |
+| Storage | **SQLite** | Pipeline defs, runs, logs, checkpoints. Files for raw artifacts. |
+| Graph shape | **Linear first** | Start simple, add DAG branching later |
+| Auth | **None (localhost)** | Localhost only for v1 |
+| Plugins | **In-tree** | v1 in-tree, plugin protocol v2 |
+| API framework | **FastAPI** | Async-native, automatic OpenAPI docs |
 
-## Honest tradeoff
+## Sequencing
 
-If the goal is "I want a dashboard to wire screen capture + Ollama + Discord,"
-n8n gets you there in a weekend (it has Ollama and Discord nodes plus a
-custom-node SDK). Build-your-own makes sense if you want to learn the runtime,
-need OCR-domain abstractions n8n can't express (typed image cursors,
-hash-dedup as a first-class concept), or want a portfolio piece.
-
-## Sequencing if we build it
-
-1. Refactor existing code into the Node protocol — no UI yet. Convert
-   `cli/screen.py` to `ScreenSource` + `OllamaProcessor` + `JsonlSink` + a tiny
-   linear runner reading a YAML file. Proves the abstraction.
-2. SQLite-backed run state. Replace `state.json` and `responses.jsonl` lookups.
-3. FastAPI with `/pipelines` CRUD and `/runs/{id}/logs` SSE. Drive with curl.
-4. React dashboard with React Flow. Palette comes from the registry endpoint.
-5. New sources/sinks (RSS, Slack, S3, etc.). By step 5 each new node is ~50
-   lines because the framework carries the weight.
+1. ~~Node protocol + linear runner + YAML definitions.~~ **Done (Phase 1)**
+2. ~~SQLite-backed run state, event log, checkpoints.~~ **Done (Phase 2)**
+3. ~~FastAPI with `/pipelines` CRUD, `/runs`, `/nodes`, SSE logs.~~ **Done (Phase 3)**
+4. React dashboard with React Flow. **Next (Phase 4)**
+5. New sources/sinks (RSS, Slack, S3, etc.).
+6. DAG runner (branching pipelines).
+7. Container image, auth, multi-user.
