@@ -238,6 +238,7 @@ def summarize_batch(
     timeout: float,
     think: str,
     batch_number: int,
+    source: str = "responses",
 ) -> dict[str, Any]:
     response = ""
     error = ""
@@ -264,7 +265,7 @@ def summarize_batch(
 
     return {
         "created_at": utc_now(),
-        "source": "responses",
+        "source": source,
         "input_path": str(input_path.resolve()),
         "model": model,
         "think": think,
@@ -295,6 +296,7 @@ def summarize_pending(
     full_batches_only: bool = False,
     rerun: bool = False,
     verbose: bool = True,
+    source: str = "responses",
 ) -> SummaryRunResult:
     entries = read_response_entries(input_path)
     if not entries:
@@ -331,6 +333,7 @@ def summarize_pending(
             timeout=timeout,
             think=think,
             batch_number=batch_number,
+            source=source,
         )
         summaries.append(summary)
         created_summaries.append(summary)

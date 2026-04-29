@@ -78,6 +78,31 @@ Override the crop box for a preview:
 python test_crop.py --crop-box 350,250,1350,850
 ```
 
+Convert a PDF into page images:
+
+```bash
+python -m extra_features.pdf_images notes.pdf --output-dir pdf_images
+```
+
+Run Ollama OCR over an image folder:
+
+```bash
+python -m pipelines.image_ollama_ocr content/images/RAG-1
+```
+
+Outputs are written to `data/ocr-output/<image-folder>/responses.jsonl`. The
+pipeline rests for a random 5-7 seconds between OCR calls by default.
+
+Summarize and post image-folder OCR output:
+
+```bash
+python -m pipelines.image_ocr_summary_watcher content/images/RAG-1
+```
+
+This watcher consumes available OCR rows in batches of 10, including the final
+partial batch, posts summaries to Discord, and stores per-folder summaries next
+to the OCR output as `data/ocr-output/<image-folder>/summaries.json`.
+
 Responses are appended to `responses.jsonl`. The temporary crop is written as
 `img.png` before calling Ollama and deleted after the response arrives. With
 `--archive-images`, the processed `img.png` is moved to
@@ -114,6 +139,8 @@ The code is split by pipeline responsibility:
 - `state_store.py` - JSON state load/save.
 - `env_loader.py` - `.env` loading.
 - `discord_sink.py` - Discord webhook posting.
+- `extra_features/` - standalone capabilities such as PDF page rendering.
+- `pipelines/` - orchestration modules for larger workflows.
 - `summarize_responses.py` - batch summary processor.
 - `summary_watcher.py` - response-log watcher and Discord dispatcher.
 - `utils.py` - compatibility re-exports for older imports.
