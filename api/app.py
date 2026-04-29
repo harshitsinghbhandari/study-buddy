@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app(db_path: str = "screen_ocr.db") -> FastAPI:
-    app = FastAPI(title="Screen OCR Pipeline API", version="0.2.0")
+    app = FastAPI(title="Screen OCR Pipeline API", version="0.2.0", lifespan=lifespan)
     app.state.db_path = db_path
 
     app.add_middleware(
