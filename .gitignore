@@ -18,3 +18,4 @@ video_frames/
 *.transcript.srt
 *.transcript.vtt
 .env
+agent-orchestrator.yaml
